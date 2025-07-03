@@ -1,6 +1,40 @@
-node_modules
-dist
+# Node dependencies
+node_modules/
+
+# Vite build output
+dist/
+server/public/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS-specific
 .DS_Store
-server/public
-vite.config.ts.*
+Thumbs.db
+
+# Env files (never commit secrets)
+.env
+.env.*
+
+# Archive files
 *.tar.gz
+*.zip
+
+# Vite config variants
+vite.config.ts.*
+vite.config.js.*
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Typescript cache
+*.tsbuildinfo
+
+# Coverage/testing
+coverage/
