@@ -1,5 +1,5 @@
 import { pgTable, text, serial, integer, boolean, timestamp, decimal, jsonb, index } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
+// import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Enhanced user table with roles and security
@@ -158,34 +158,21 @@ export const rateLimitLogs = pgTable("rate_limit_logs", {
 }));
 
 // Enhanced schemas with validation
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  email: true,
-  password: true,
-  role: true,
-}).extend({
+export const insertUserSchema = z.object({
   username: z.string().min(3).max(50).regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   role: z.enum(["admin", "merchant", "user"]).default("merchant"),
 });
 
-export const insertTransactionSchema = createInsertSchema(transactions).pick({
-  amount: true,
-  currency: true,
-  provider: true,
-  paymentMethod: true,
-  phone: true,
-  reference: true,
-  description: true,
-  callbackUrl: true,
-  paybillNumber: true,
-  tillNumber: true,
-  accountReference: true,
-  cardToken: true,
-  metadata: true,
-}).extend({
-  amount: z.number().positive("Amount must be positive"),
+export const insertTransactionSchema = z.object({
+  amount: z.union([
+    z.number().positive("Amount must be positive"),
+    z.string().refine((val) => {
+      const num = parseFloat(val);
+      return !isNaN(num) && num > 0;
+    }, "Amount must be a positive number").transform((val) => parseFloat(val))
+  ]),
   currency: z.enum(["KES", "USD", "EUR"]).default("KES"),
   provider: z.enum(["mpesa", "airtel", "equity", "paybill", "till", "card"]),
   paymentMethod: z.enum(["stk_push", "paybill", "till", "card", "bank_transfer"]),
@@ -200,13 +187,7 @@ export const insertTransactionSchema = createInsertSchema(transactions).pick({
   metadata: z.record(z.any()).optional(),
 });
 
-export const insertWebhookSchema = createInsertSchema(webhooks).pick({
-  name: true,
-  url: true,
-  events: true,
-  retryCount: true,
-  timeout: true,
-}).extend({
+export const insertWebhookSchema = z.object({
   name: z.string().min(1).max(100),
   url: z.string().url("Invalid webhook URL"),
   events: z.array(z.enum([

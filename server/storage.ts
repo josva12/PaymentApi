@@ -200,6 +200,8 @@ export class MemStorage implements IStorage {
       name: provider.name,
       isActive: provider.isActive,
       config: provider.config,
+      webhookUrl: null,
+      webhookSecret: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -239,7 +241,9 @@ export class MemStorage implements IStorage {
       apiKey,
       isActive: true,
       isEmailVerified: false,
+      lastLoginAt: null,
       failedLoginAttempts: 0,
+      lockedUntil: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -348,20 +352,40 @@ export class MemStorage implements IStorage {
 
   async createTransaction(transaction: InsertTransaction & { userId: number; ipAddress?: string; userAgent?: string }): Promise<Transaction> {
     const transactionId = `txn_${nanoid(12)}`;
-    const checkoutRequestId = transaction.provider === "mpesa" ? `ws_CO_${Date.now()}` : undefined;
+    const checkoutRequestId = transaction.provider === "mpesa" ? `ws_CO_${Date.now()}` : null;
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes expiry
     
     const newTransaction: Transaction = {
       ...transaction,
       id: this.currentTransactionId++,
       transactionId,
+      amount: typeof transaction.amount === 'number' ? transaction.amount.toFixed(2) : transaction.amount,
+      phone: transaction.phone ?? null,
+      reference: transaction.reference ?? null,
+      description: transaction.description ?? null,
       checkoutRequestId,
+      mpesaReceiptNumber: null,
+      merchantRequestId: null,
+      equityTransactionId: null,
+      accountNumber: null,
+      paybillNumber: null,
+      tillNumber: null,
+      accountReference: null,
+      cardLast4: null,
+      cardBrand: null,
+      cardToken: null,
+      callbackUrl: null,
+      webhookAttempts: 0,
+      lastWebhookAttempt: null,
+      metadata: null,
+      ipAddress: transaction.ipAddress ?? null,
+      userAgent: transaction.userAgent ?? null,
+      failureReason: null,
       status: PAYMENT_STATUS.PENDING,
       createdAt: new Date(),
       updatedAt: new Date(),
       completedAt: null,
-      mpesaReceiptNumber: null,
-      webhookAttempts: 0,
+      expiresAt,
     };
     
     this.transactions.set(transactionId, newTransaction);
@@ -377,7 +401,6 @@ export class MemStorage implements IStorage {
         });
       }, 5000);
     }
-    
     return newTransaction;
   }
 
@@ -448,11 +471,11 @@ export class MemStorage implements IStorage {
       transactionId: delivery.transactionId,
       event: delivery.event,
       payload: delivery.payload,
-      responseStatus: delivery.responseStatus,
-      responseBody: delivery.responseBody,
+      responseStatus: delivery.responseStatus ?? null,
+      responseBody: delivery.responseBody ?? null,
       attempt: delivery.attempt,
       success: delivery.success,
-      errorMessage: delivery.errorMessage,
+      errorMessage: delivery.errorMessage ?? null,
       createdAt: new Date(),
     };
     
@@ -474,13 +497,13 @@ export class MemStorage implements IStorage {
     
     const newLog: AuditLog = {
       id,
-      userId: log.userId,
+      userId: log.userId ?? null,
       action: log.action,
       resource: log.resource,
-      resourceId: log.resourceId,
-      details: log.details,
-      ipAddress: log.ipAddress,
-      userAgent: log.userAgent,
+      resourceId: log.resourceId ?? null,
+      details: log.details ?? null,
+      ipAddress: log.ipAddress ?? null,
+      userAgent: log.userAgent ?? null,
       createdAt: new Date(),
     };
     
@@ -537,16 +560,14 @@ export class MemStorage implements IStorage {
     method: string;
   }): Promise<RateLimitLog> {
     const id = this.currentRateLimitLogId++;
-    
     const newLog: RateLimitLog = {
       id,
-      userId: log.userId,
+      userId: log.userId ?? null,
       ipAddress: log.ipAddress,
       endpoint: log.endpoint,
       method: log.method,
       createdAt: new Date(),
     };
-    
     this.rateLimitLogs.set(id, newLog);
     return newLog;
   }
@@ -563,6 +584,24 @@ export class MemStorage implements IStorage {
     const updatedProvider = { ...provider, ...updates, updatedAt: new Date() };
     this.paymentProviders.set(id, updatedProvider);
     return updatedProvider;
+  }
+
+  async clearAllData() {
+    this.users.clear();
+    this.transactions.clear();
+    this.webhooks.clear();
+    this.webhookDeliveries.clear();
+    this.auditLogs.clear();
+    this.paymentProviders.clear();
+    this.rateLimitLogs.clear();
+    this.currentUserId = 1;
+    this.currentTransactionId = 1;
+    this.currentWebhookId = 1;
+    this.currentWebhookDeliveryId = 1;
+    this.currentAuditLogId = 1;
+    this.currentPaymentProviderId = 1;
+    this.currentRateLimitLogId = 1;
+    await this.initializeDefaultData();
   }
 }
 

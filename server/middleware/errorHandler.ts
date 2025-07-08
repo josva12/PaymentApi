@@ -73,6 +73,26 @@ export const errorHandler = (
     statusCode = 408;
     message = "Request timeout";
   }
+  // Handle M-Pesa API errors
+  else if (error.message?.includes("M-Pesa") || error.message?.includes("DARAJA")) {
+    statusCode = 502;
+    message = "Payment service temporarily unavailable";
+    logger.error("M-Pesa API Error:", error);
+  }
+  // Handle Axios errors
+  else if (error.name === "AxiosError") {
+    const axiosError = error as any;
+    if (axiosError.response) {
+      statusCode = axiosError.response.status || 502;
+      message = axiosError.response.data?.message || "External service error";
+    } else if (axiosError.request) {
+      statusCode = 503;
+      message = "External service unavailable";
+    } else {
+      statusCode = 500;
+      message = "Request configuration error";
+    }
+  }
 
   // Log error details
   const errorDetails = {

@@ -1,5 +1,4 @@
-import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Express, Request } from "express";
 import { storage } from "./storage";
 import { 
   insertTransactionSchema, 
@@ -25,24 +24,29 @@ import { webhookService } from "./services/webhooks";
 const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key-change-in-production";
 const JWT_EXPIRES_IN = "24h";
 
+// Extend Request type to include user
+interface AuthenticatedRequest extends Request {
+  user?: any;
+}
+
 // Authentication middleware
-async function authenticateUser(req: any, res: any, next: any) {
+async function authenticateUser(req: AuthenticatedRequest, res: any, next: any) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw Errors.Unauthorized("Missing or invalid authorization header");
-    }
+  }
 
     const token = authHeader.substring(7);
     const decoded = jwt.verify(token, JWT_SECRET) as any;
-    
+  
     const user = await storage.getUser(decoded.userId);
-    if (!user || !user.isActive) {
+  if (!user || !user.isActive) {
       throw Errors.Unauthorized("Invalid or inactive user");
-    }
+  }
 
-    req.user = user;
-    next();
+  req.user = user;
+  next();
   } catch (error) {
     if (error instanceof CustomError) {
       next(error);
@@ -54,7 +58,7 @@ async function authenticateUser(req: any, res: any, next: any) {
 
 // Role-based authorization middleware
 function authorizeRole(roles: string[]) {
-  return (req: any, res: any, next: any) => {
+  return (req: AuthenticatedRequest, res: any, next: any) => {
     if (!req.user) {
       return next(Errors.Unauthorized("Authentication required"));
     }
@@ -67,13 +71,11 @@ function authorizeRole(roles: string[]) {
   };
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  const server = createServer(app);
-
+export function registerRoutes(app: Express): void {
   // ==================== AUTHENTICATION ROUTES ====================
-  
+
   // User registration
-  app.post("/api/auth/register", validateRequest(insertUserSchema), async (req, res, next) => {
+  app.post("/api/auth/register", validateRequest(insertUserSchema), async (req: AuthenticatedRequest, res, next) => {
     try {
       const userData = req.body;
       
@@ -118,12 +120,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         message: "User registered successfully",
         data: {
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
             role: user.role,
-            apiKey: user.apiKey,
+          apiKey: user.apiKey,
           },
           token,
         },
@@ -134,7 +136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User login
-  app.post("/api/auth/login", async (req, res, next) => {
+  app.post("/api/auth/login", async (req: AuthenticatedRequest, res, next) => {
     try {
       const { username, password } = req.body;
 
@@ -185,12 +187,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         message: "Login successful",
         data: {
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
             role: user.role,
-            apiKey: user.apiKey,
+          apiKey: user.apiKey,
           },
           token,
         },
@@ -207,14 +209,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     authenticateUser, 
     authorizeRole(["merchant", "admin"]),
     validateRequest(insertTransactionSchema),
-    async (req, res, next) => {
+    async (req: AuthenticatedRequest, res, next) => {
       try {
         const transactionData = req.body;
-        const userId = req.user.id;
+        const userId = req.user!.id;
 
         // Create transaction record
-        const transaction = await storage.createTransaction({
-          ...transactionData,
+      const transaction = await storage.createTransaction({
+        ...transactionData,
           userId,
           ipAddress: req.ip,
           userAgent: req.get("User-Agent"),
@@ -234,17 +236,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           success: true,
           message: "Payment intent created successfully",
           data: {
-            transaction_id: transaction.transactionId,
+        transaction_id: transaction.transactionId,
             status: transaction.status,
             amount: parseFloat(transaction.amount),
             currency: transaction.currency,
             provider: transaction.provider,
             payment_method: transaction.paymentMethod,
             expires_at: transaction.expiresAt?.toISOString(),
-            created_at: transaction.createdAt.toISOString(),
+        created_at: transaction.createdAt.toISOString(),
           },
-        });
-      } catch (error) {
+      });
+    } catch (error) {
         next(error);
       }
     }
@@ -254,13 +256,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/v1/payments/initiate/:transactionId", 
     authenticateUser,
     authorizeRole(["merchant", "admin"]),
-    async (req, res, next) => {
-      try {
-        const { transactionId } = req.params;
-        const userId = req.user.id;
+    async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const { transactionId } = req.params;
+        const userId = req.user!.id;
 
         // Get transaction
-        const transaction = await storage.getTransaction(transactionId);
+      const transaction = await storage.getTransaction(transactionId);
         if (!transaction) {
           throw Errors.NotFound("Transaction not found");
         }
@@ -327,10 +329,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get transaction status
   app.get("/api/v1/transactions/:transactionId", 
     authenticateUser,
-    async (req, res, next) => {
+    async (req: AuthenticatedRequest, res, next) => {
       try {
         const { transactionId } = req.params;
-        const userId = req.user.id;
+        const userId = req.user!.id;
 
         const transaction = await storage.getTransaction(transactionId);
         if (!transaction) {
@@ -338,33 +340,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Check access permissions
-        if (transaction.userId !== userId && req.user.role !== "admin") {
+        if (transaction.userId !== userId && req.user!.role !== "admin") {
           throw Errors.Forbidden("Access denied");
-        }
+      }
 
-        res.json({
+      res.json({
           success: true,
           data: {
-            transaction_id: transaction.transactionId,
-            status: transaction.status,
-            amount: parseFloat(transaction.amount),
-            currency: transaction.currency,
-            provider: transaction.provider,
+        transaction_id: transaction.transactionId,
+        status: transaction.status,
+        amount: parseFloat(transaction.amount),
+        currency: transaction.currency,
+        provider: transaction.provider,
             payment_method: transaction.paymentMethod,
-            phone: transaction.phone,
-            reference: transaction.reference,
+        phone: transaction.phone,
+        reference: transaction.reference,
             description: transaction.description,
-            mpesa_receipt_number: transaction.mpesaReceiptNumber,
+        mpesa_receipt_number: transaction.mpesaReceiptNumber,
             equity_transaction_id: transaction.equityTransactionId,
             paybill_number: transaction.paybillNumber,
             till_number: transaction.tillNumber,
             account_reference: transaction.accountReference,
-            created_at: transaction.createdAt.toISOString(),
+        created_at: transaction.createdAt.toISOString(),
             completed_at: transaction.completedAt?.toISOString(),
             expires_at: transaction.expiresAt?.toISOString(),
           },
-        });
-      } catch (error) {
+      });
+    } catch (error) {
         next(error);
       }
     }
@@ -373,9 +375,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // List user transactions
   app.get("/api/v1/transactions", 
     authenticateUser,
-    async (req, res, next) => {
+    async (req: AuthenticatedRequest, res, next) => {
       try {
-        const userId = req.user.id;
+        const userId = req.user!.id;
         const { page = 1, limit = 20, status, provider } = req.query;
 
         const transactions = await storage.getTransactionsByUser(userId, {
@@ -384,21 +386,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: status as string,
           provider: provider as string,
         });
-
-        res.json({
+      
+      res.json({
           success: true,
           data: {
-            transactions: transactions.map(transaction => ({
-              transaction_id: transaction.transactionId,
-              status: transaction.status,
-              amount: parseFloat(transaction.amount),
-              currency: transaction.currency,
-              provider: transaction.provider,
+        transactions: transactions.map(transaction => ({
+          transaction_id: transaction.transactionId,
+          status: transaction.status,
+          amount: parseFloat(transaction.amount),
+          currency: transaction.currency,
+          provider: transaction.provider,
               payment_method: transaction.paymentMethod,
-              phone: transaction.phone,
-              reference: transaction.reference,
+          phone: transaction.phone,
+          reference: transaction.reference,
               description: transaction.description,
-              created_at: transaction.createdAt.toISOString(),
+          created_at: transaction.createdAt.toISOString(),
               completed_at: transaction.completedAt?.toISOString(),
             })),
             pagination: {
@@ -407,18 +409,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
               total: transactions.length,
             },
           },
-        });
-      } catch (error) {
+      });
+    } catch (error) {
         next(error);
       }
     }
   );
 
+  // ==================== HEALTH CHECK ====================
+
+  // Health check endpoint
+  app.get("/api/v1/health", (req, res) => {
+    res.json({
+      success: true,
+      message: "Payment API is healthy",
+      timestamp: new Date().toISOString(),
+      version: "1.0.0",
+    });
+  });
+
   // ==================== WEBHOOK ROUTES ====================
 
   // M-Pesa webhook
-  app.post("/api/v1/webhooks/mpesa", async (req, res, next) => {
+  app.post("/api/v1/webhooks/mpesa", async (req: AuthenticatedRequest, res, next) => {
     try {
+      // Validate webhook payload
+      const { Body } = req.body;
+      if (!Body || !Body.stkCallback || !Body.stkCallback.CheckoutRequestID) {
+        logger.error("Invalid webhook payload received");
+        return res.status(400).json({ success: false, error: "Invalid webhook payload" });
+      }
+
       const result = await mpesaService.handleWebhook(req.body);
       
       // Process webhook
@@ -427,12 +448,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, message: "Webhook processed successfully" });
     } catch (error) {
       logger.error("M-Pesa webhook error:", error);
-      res.status(400).json({ success: false, message: "Webhook processing failed" });
+      
+      // Return appropriate error status based on error type
+      if (error instanceof Error && error.message.includes("Transaction not found")) {
+        return res.status(404).json({ success: false, error: "Transaction not found" });
+      }
+      
+      // For unexpected server errors, return 500
+      res.status(500).json({ success: false, error: "Internal server error" });
     }
   });
 
   // Equity Bank webhook
-  app.post("/api/v1/webhooks/equity", async (req, res, next) => {
+  app.post("/api/v1/webhooks/equity", async (req: AuthenticatedRequest, res, next) => {
     try {
       const result = await equityService.handleWebhook(req.body);
       
@@ -452,14 +480,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/v1/admin/analytics/stats", 
     authenticateUser,
     authorizeRole(["admin"]),
-    async (req, res, next) => {
+    async (req: AuthenticatedRequest, res, next) => {
       try {
         const stats = await storage.getTransactionStats();
         res.json({
           success: true,
           data: stats,
         });
-      } catch (error) {
+    } catch (error) {
         next(error);
       }
     }
@@ -469,7 +497,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/v1/admin/transactions", 
     authenticateUser,
     authorizeRole(["admin"]),
-    async (req, res, next) => {
+    async (req: AuthenticatedRequest, res, next) => {
       try {
         const { page = 1, limit = 50, status, provider, userId } = req.query;
 
@@ -481,7 +509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId: userId ? Number(userId) : undefined,
         });
 
-        res.json({
+      res.json({
           success: true,
           data: {
             transactions: transactions.map(transaction => ({
@@ -501,12 +529,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               total: transactions.length,
             },
           },
-        });
-      } catch (error) {
+      });
+    } catch (error) {
         next(error);
       }
     }
   );
-
-  return server;
 }

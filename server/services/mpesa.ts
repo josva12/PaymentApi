@@ -5,11 +5,11 @@ import { Transaction } from "@shared/schema";
 
 // DARAJA API Configuration
 const DARAJA_CONFIG = {
-  baseUrl: process.env.DARAJA_BASE_URL || "https://sandbox.safaricom.co.ke",
-  consumerKey: process.env.DARAJA_CONSUMER_KEY || "",
-  consumerSecret: process.env.DARAJA_CONSUMER_SECRET || "",
-  passkey: process.env.DARAJA_PASSKEY || "",
-  shortcode: process.env.DARAJA_SHORTCODE || "",
+  baseUrl: process.env.MPESA_BASE_URL || "https://sandbox.safaricom.co.ke",
+  consumerKey: process.env.MPESA_CONSUMER_KEY || "",
+  consumerSecret: process.env.MPESA_CONSUMER_SECRET || "",
+  passkey: process.env.MPESA_PASSKEY || "",
+  shortcode: process.env.MPESA_SHORTCODE || "",
   environment: process.env.NODE_ENV || "sandbox",
 };
 
@@ -44,6 +44,12 @@ class MpesaService {
       return this.accessToken;
     }
 
+    // In test environment, return a mock token if credentials are not configured
+    if (process.env.NODE_ENV === 'test' && (!DARAJA_CONFIG.consumerKey || !DARAJA_CONFIG.consumerSecret)) {
+      logger.warn("Using mock M-Pesa credentials for test environment");
+      return "mock_access_token_for_testing";
+    }
+
     try {
       const auth = Buffer.from(`${DARAJA_CONFIG.consumerKey}:${DARAJA_CONFIG.consumerSecret}`).toString('base64');
       
@@ -57,7 +63,7 @@ class MpesaService {
       this.tokenExpiry = new Date(Date.now() + (response.data.expires_in * 1000));
       
       logger.info("M-Pesa access token refreshed");
-      return this.accessToken;
+      return this.accessToken!;
     } catch (error) {
       logger.error("Failed to get M-Pesa access token:", error);
       throw new Error("Failed to authenticate with M-Pesa API");
